@@ -10,22 +10,28 @@ Usage:
     $CMDNAME [options] <INPUT>
 
 Description:
-    This script extracts a random subset from a fastq file. In the single-ended case, the results are displayed on standard output. In the paired-end case, the results are written to a file.
+    This script extracts a random subset from a fastq file.
+    The input format is bz2, gzip, or uncompressed fastq.
+    The output file is automatically created as a file similar to
+    the input file format.　If you do not specify a file name.
+    The file name will be, for example, <prefix>_sub.fastq.gz.
 
 Options:
   -n <INT>  Size of subset [default: 10000]
   -s <INT>  Seed number
+  -o <CHR>  Read1 output filename
+  -O <CHR>  Read2 output filename, in case of paired-end reads
   -h        Print this document
 
 Examples:
-    $CMDNAME -n 1000 input.fastq > sub.fastq
-    $CMDNAME -n 100 -s 123 input_R1.fastq.gz input_R2.fastq.gz
+    $CMDNAME -n 1000 input.fastq
+    $CMDNAME -n 1000 -s 123 input_R1.fastq.gz input_R2.fastq.gz
 
 EOS
 }
 
 # Argument check 01: optional arguments
-while getopts n:s:h OPT
+while getopts n:s:o:O:h OPT
 do
   case $OPT in
     "n" ) FLG_n="TRUE" ; VALUE_n="$OPTARG"
@@ -38,47 +44,151 @@ do
         echo "Must be an integer value greater than or equal to 1: -s";
         exit 1
       fi ;;
+    "o" ) VALUE_o="$OPTARG";;
+    "O" ) VALUE_O="$OPTARG";;
     "h" ) print_doc; exit 1 ;;
      \? ) print_doc; exit 1 ;;
   esac
 done
 shift `expr $OPTIND - 1`
 
-# argument check 03: set default settings
+# Argument check 02: set default settings
 if [[ -z $VALUE_n ]] ; then
   VALUE_n=10000
 fi
-if [[ -n $VALUE_s ]] ; then
-  RANDOM=$VALUE_s
+if [[ -z $VALUE_s ]] ; then
+  RAND=${RANDOM}
+else
+  RAND=${VALUE_s}
 fi
 
-
-# argument check 05: no optional arguments
-if [[ $# = 2 ]]; then # paired-end
-  for fp in $@; do
-    if [ -f $fp ]; then
-      echo "${fp} exists"
-    else
-      echo "Your input files don't exists."
-      exit 1
-    fi
-  done
-
-  R1=$1
-  R2=$2
-
-elif [[ $# = 1 ]]; then # single end
-  if [ -f $@ ]; then
-    echo "$1 exists"
+# Argument check 03: no optional arguments and commpressed or not
+# Create output file name
+if [[ $# = 2 && -f $1 && -f $2 ]]; then # paired-end
+  # Check INPUT file type, and OUTPUT file type
+  if file $1 | grep -q "gzip" && file $2 | grep -q "gzip" ; then
+    OUTSFX="gz"
+  elif file $1 | grep -q "bzip2" && file $2 | grep -q "bzip2" ; then
+    OUTSFX="bz2"
+  elif file $1 | grep -q "ASCII" && file $2 | grep -q "ASCII"; then
+    OUTSFX="fastq"
   else
-    echo "Your input files don't exists."
+    echo "The input file must be in fastq format a gzipped  or a bzip2 compressed fastq file. "
     exit 1
   fi
 
-  R1=$1
+  # Create output file names, or
+  R1=`basename $1`; R2=`basename $2`
+  PFX1=$(echo $R1 | sed -e 's/\..*//')
+  PFX2=$(echo $R2 | sed -e 's/\..*//');
+  OUTPUT1=${PFX1}_sub.fastq.${OUTSFX}
+  OUTPUT2=${PFX2}_sub.fastq.${OUTSFX}
 
+elif [[ $# = 1 && -f $1 ]]; then # single end
+  if file $1 | grep -q "gzip" ; then
+    OUTSFX="gz"
+  elif file $1 | grep -q "bzip2" ; then
+    OUTSFX="bz2"
+  elif file $1 | grep -q "ASCII" ; then
+    OUTSFX="fastq"
+  else
+    echo "The input file must be in fastq format a gzipped  or a bzip2 compressed fastq file. "
+    exit 1
+  fi
+
+  # Create default output file names
+  R1=`basename $1`
+  PFX1=$(echo $R1 | sed -e 's/\..*//')
+  OUTPUT1=${PFX1}_sub.fastq.${OUTSFX}
 else
-  echo "One or two arguments are required as the fastq file path."
-  print_doc
+  echo "One or two arguments are required as the fastq or compressed fastq file path."
   exit 1
 fi
+
+# Argument check 04: Replace default output file names as args
+if [[ -n $VALUE_o && -n $VALUE_O ]]; then
+  OUTPUT1=${VALUE_o}
+  OUTPUT2=${VALUE_O}
+elif [[ -n $VALUE_o && -z $VALUE_O ]]; then
+  OUTPUT1=${VALUE_o}
+else
+  :
+fi
+
+# print debug Check
+echo "Sampling number:${VALUE_n}"
+echo "Seed number: ${RAND}"
+echo "Read1: ${R1}"
+echo "Read2: ${R2}"
+echo "Suffix of output: ${OUTSFX}"
+echo "Read1 output: ${OUTPUT1}"
+echo "Read2 output: ${OUTPUT2}"
+
+### MAIN ###
+if [[ $# = 2 ]]; then
+  case "${OUTSFX}" in
+    "bz2" )
+      echo "paired-end bz2"
+      paste <(bunzip2 -c $1) <(bunzip2 -c $2) \
+      | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
+      | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
+      | awk -F"\t" '{print $1"\n"$3"\n"$5"\n"$7 | "bzip2 > '$OUTPUT1'"; \
+      print $2"\n"$4"\n"$6"\n"$8 | "bzip2 > '$OUTPUT2'"}'
+      ;;
+
+    "gz" )
+      echo "paired-end gz"
+      paste <(gunzip -c $1) <(gunzip -c $2) \
+      | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
+      | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
+      | awk -F"\t" '{print $1"\n"$3"\n"$5"\n"$7 | "gzip > '$OUTPUT1'"; \
+      print $2"\n"$4"\n"$6"\n"$8 | "gzip > '$OUTPUT2'"}'
+      ;;
+
+    "fastq" )
+      echo "paired-end fastq"
+      paste <(cat $1) <(cat $2) \
+      | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
+      | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
+      | awk -F"\t" -v OUTPUT1=${OUTPUT1} -v OUTPUT2=${OUTPUT2} \
+      '{print $1"\n"$3"\n"$5"\n"$7 > OUTPUT1 ; \
+      print $2"\n"$4"\n"$6"\n"$8 > OUTPUT2 }'
+      ;;
+
+    * ) echo -e "You must select bz2, gz, or uncompressed fastq."
+    exit 1 ;;
+  esac
+
+elif [[ $# = 1 ]]; then
+  case "${OUTSFX}" in
+    "bz2" ) echo "singleend bz2";
+      bunzip2 -c $1 \
+      | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
+      | shuf -n $VALUE_n --random-source=<(yes ${RAND})\
+      | awk -F"\t" '{print $1"\n"$2"\n"$3"\n"$4 }' \
+      | bzip2 > $OUTPUT1
+      ;;
+
+    "gz" ) echo "singleend gz";
+      gunzip -c $1 \
+      | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
+      | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
+      | awk -F"\t" '{print $1"\n"$2"\n"$3"\n"$4 }' \
+      | gzip > $OUTPUT1
+      ;;
+
+    "fastq" ) echo "singleend fastq";
+      cat $1 \
+      | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
+      | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
+      | awk -F"\t" '{print $1"\n"$2"\n"$3"\n"$4 }' > $OUTPUT1
+      ;;
+
+    * ) echo -e "You must select bz2, gz, or uncompressed fastq."
+    exit 1 ;;
+  esac
+else
+  :
+fi
+
+exit 0
