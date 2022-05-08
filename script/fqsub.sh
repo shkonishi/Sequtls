@@ -62,10 +62,8 @@ else
   RAND=${VALUE_s}
 fi
 
-# Argument check 03: no optional arguments and commpressed or not
-# Create output file name
-if [[ $# = 2 && -f $1 && -f $2 ]]; then # paired-end
-  # Check INPUT file type, and OUTPUT file type
+# Argument check 03: Check the file format of the argument without options.
+if [[ $# = 2 && -f $1 && -f $2 ]]; then  # paired-end
   if file $1 | grep -q "gzip" && file $2 | grep -q "gzip" ; then
     OUTSFX="gz"
   elif file $1 | grep -q "bzip2" && file $2 | grep -q "bzip2" ; then
@@ -73,16 +71,9 @@ if [[ $# = 2 && -f $1 && -f $2 ]]; then # paired-end
   elif file $1 | grep -q "ASCII" && file $2 | grep -q "ASCII"; then
     OUTSFX="fastq"
   else
-    echo "The input file must be in fastq format a gzipped  or a bzip2 compressed fastq file. "
+    echo "The input file must be a gz or bz2 compressed fastq file or uncompressed fastq format. "
     exit 1
   fi
-
-  # Create output file names, or
-  R1=`basename $1`; R2=`basename $2`
-  PFX1=$(echo $R1 | sed -e 's/\..*//')
-  PFX2=$(echo $R2 | sed -e 's/\..*//');
-  OUTPUT1=${PFX1}_sub.fastq.${OUTSFX}
-  OUTPUT2=${PFX2}_sub.fastq.${OUTSFX}
 
 elif [[ $# = 1 && -f $1 ]]; then # single end
   if file $1 | grep -q "gzip" ; then
@@ -92,34 +83,51 @@ elif [[ $# = 1 && -f $1 ]]; then # single end
   elif file $1 | grep -q "ASCII" ; then
     OUTSFX="fastq"
   else
-    echo "The input file must be in fastq format a gzipped  or a bzip2 compressed fastq file. "
+    echo "The input file must be a gz or bz2 compressed fastq file or uncompressed fastq format. "
     exit 1
   fi
 
-  # Create default output file names
-  R1=`basename $1`
-  PFX1=$(echo $R1 | sed -e 's/\..*//')
-  OUTPUT1=${PFX1}_sub.fastq.${OUTSFX}
 else
-  echo "One or two arguments are required as the fastq or compressed fastq file path."
+  echo "One or two arguments are required as the path to the fastq or compressed fastq file (gz|bz2)."
   exit 1
 fi
 
-# Argument check 04: Replace default output file names as args
-if [[ -n $VALUE_o && -n $VALUE_O ]]; then
-  OUTPUT1=${VALUE_o}
-  OUTPUT2=${VALUE_O}
-elif [[ -n $VALUE_o && -z $VALUE_O ]]; then
-  OUTPUT1=${VALUE_o}
+# Argument check 04: default output file names as args
+if [[ $# = 2 && -f $1 && -f $2 ]]; then # paired-end
+  if [[ -n $VALUE_o && -n $VALUE_O ]]; then
+    OUTPUT1=${VALUE_o}
+    OUTPUT2=${VALUE_O}
+
+  elif [[ -z $VALUE_o && -z $VALUE_O ]]; then
+    R1=`basename $1`; R2=`basename $2`
+    PFX1=$(echo $R1 | sed -e 's/\..*//')
+    PFX2=$(echo $R2 | sed -e 's/\..*//');
+    OUTPUT1=${PFX1}_sub.fastq.${OUTSFX}
+    OUTPUT2=${PFX2}_sub.fastq.${OUTSFX}
+  else
+    :
+  fi
+
+elif [[ $# = 1 && -f $1 ]]; then # single
+  if [[ -n $VALUE_o && -z $VALUE_O ]]; then
+    OUTPUT1=${VALUE_o}
+
+  elif [[ -z $VALUE_o && -z $VALUE_O ]]; then
+    R1=`basename $1`
+    PFX1=$(echo $R1 | sed -e 's/\..*//')
+    OUTPUT1=${PFX1}_sub.fastq.${OUTSFX}
+  else
+    :
+  fi
 else
   :
 fi
 
-# print debug Check
+# Check var
 echo "Sampling number:${VALUE_n}"
 echo "Seed number: ${RAND}"
-echo "Read1: ${R1}"
-echo "Read2: ${R2}"
+echo "Read1: $1"
+echo "Read2: $2"
 echo "Suffix of output: ${OUTSFX}"
 echo "Read1 output: ${OUTPUT1}"
 echo "Read2 output: ${OUTPUT2}"
