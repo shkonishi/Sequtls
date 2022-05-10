@@ -19,8 +19,8 @@ Options:
   -o  output filename [default: manifest.csv]
 
 Examples:
-    $CMDNAME -s ./fqdir -o q2dat.csv   [single-end]
-    $CMDNAME -p ./fqdir -o q2dat.csv   [paired-end]
+    $CMDNAME -s -o q2dat.csv fqdir    [single-end]
+    $CMDNAME -p -o q2dat.csv fqdir    [paired-end]
 EOS
 }
 
@@ -54,6 +54,7 @@ else
     exit 1
 fi
 echo $OUTPUT
+
 ### MAIN ###
 # fastqディレクトリのパスを取得
 FQD=`basename $1`
@@ -62,10 +63,12 @@ CPFQD=$(pwd $FQD)/$FQD
 # header line
 echo sample-id","absolute-filepath","direction > $OUTPUT
 
-# ディレクトリ中に含まれるfastqファイルの情報をmanifest.csvに記述
+# Write down the complete path and read direction of the fastq files contained in the directory
 if [[ ${FLG_s} == "TRUE" && ${FLG_p} == "TRUE" ]]; then
+  echo "Either the -p or -o option must be selected."
+
 elif [[ ${FLG_s} == "TRUE" && ${FLG_p} != "TRUE" ]]; then # single end
-  # fastq files
+  # collect fastq files
   FQS=`ls $CPFQD | grep -e ".fastq$" -e ".fastq.gz$" -e ".fq$" -e ".fq.gz$"`
 
   for r1 in ${FQS[@]}; do
@@ -77,9 +80,9 @@ elif [[ ${FLG_s} == "TRUE" && ${FLG_p} != "TRUE" ]]; then # single end
 elif [[ ${FLG_s} != "TRUE" && ${FLG_p} == "TRUE" ]]; then # paired-end
   # collect Read1 files
   FQS=(`ls $CPFQD | grep -e "_R1" -e "_1" `)
+
   for r1 in ${FQS[@]}; do
     r2=`echo $r1 | sed -e 's/_R1/_R2/' -e 's/_1\./_2\./' `
-    # r2=${r1/_R1/_R2}
     ID=`echo $r1 | cut -f 1 -d "_"`
     cpfq_r1=${CPFQD}/${r1}
     cpfq_r2=${CPFQD}/${r2}
