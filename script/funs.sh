@@ -33,6 +33,12 @@ function faTab () {
   awk 'BEGIN{RS=">"; FS="\n"} NR>1 {print $1"\t"$2;}' $1
 }
 
+# faLen
+function faLen () {
+  awk '/^>/ { print n $0; n = "" }!/^>/ { printf "%s", $0; n = "\n" } END{ printf "%s", n }' $1 \
+  | awk '!/^>/{print length($0)}'
+}
+
 # faFormat
 function faFormat () {
   awk '/^>/ { print n $0; n = "" }!/^>/ { printf "%s", $0; n = "\n" } END{ printf "%s", n }' $1
