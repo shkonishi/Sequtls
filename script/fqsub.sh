@@ -1,6 +1,6 @@
 #!/bin/bash
 VERSION=0.0.1
-AUTHOR=SHOGO_KONISHI[shkonishi@gmail.com]
+AUTHOR=SHOGO_KONISH
 CMDNAME=`basename $0`
 
 # print help document of this script
@@ -24,8 +24,10 @@ Options:
   -h        Print this document
 
 Examples:
-    $CMDNAME -n 1000 input.fastq
-    $CMDNAME -n 1000 -s 123 input_R1.fastq.gz input_R2.fastq.gz
+    $CMDNAME -n 100 in_R1.fastq
+    $CMDNAME -n 100 -s 123 in_R1.fastq in_R2.fq.gz
+    $CMDNAME -n 100 -o r1_sub.fq -O r2_sub.fq in_R1.fastq in_R2.fastq
+    $CMDNAME -n 100 -s123 -o - r1_sub.fq.gz
 
 EOS
 }
@@ -53,6 +55,7 @@ done
 shift `expr $OPTIND - 1`
 
 # Argument check 02: set default settings
+# sanmpling size and seed number
 if [[ -z $VALUE_n ]] ; then
   VALUE_n=10000
 fi
@@ -65,11 +68,11 @@ fi
 # Argument check 03: Check the file format of the argument without options.
 if [[ $# = 2 && -f $1 && -f $2 ]]; then  # paired-end
   if file $1 | grep -q "gzip" && file $2 | grep -q "gzip" ; then
-    OUTSFX="gz"
+    INSFX="gz"
   elif file $1 | grep -q "bzip2" && file $2 | grep -q "bzip2" ; then
-    OUTSFX="bz2"
+    INSFX="bz2"
   elif file $1 | grep -q "ASCII" && file $2 | grep -q "ASCII"; then
-    OUTSFX="fastq"
+    INSFX="fastq"
   else
     echo "The input file must be a gz or bz2 compressed fastq file or uncompressed fastq format. "
     exit 1
@@ -77,11 +80,11 @@ if [[ $# = 2 && -f $1 && -f $2 ]]; then  # paired-end
 
 elif [[ $# = 1 && -f $1 ]]; then # single end
   if file $1 | grep -q "gzip" ; then
-    OUTSFX="gz"
+    INSFX="gz"
   elif file $1 | grep -q "bzip2" ; then
-    OUTSFX="bz2"
+    INSFX="bz2"
   elif file $1 | grep -q "ASCII" ; then
-    OUTSFX="fastq"
+    INSFX="fastq"
   else
     echo "The input file must be a gz or bz2 compressed fastq file or uncompressed fastq format. "
     exit 1
@@ -101,21 +104,21 @@ if [[ $# = 2 && -f $1 && -f $2 ]]; then # paired-end
   elif [[ -z $VALUE_o && -z $VALUE_O ]]; then
     R1=`basename $1`; R2=`basename $2`
     PFX1=$(echo $R1 | sed -e 's/\..*//')
-    PFX2=$(echo $R2 | sed -e 's/\..*//');
-    OUTPUT1=${PFX1}_sub.fastq.${OUTSFX}
-    OUTPUT2=${PFX2}_sub.fastq.${OUTSFX}
+    PFX2=$(echo $R2 | sed -e 's/\..*//')
+    OUTPUT1=${PFX1}_sub.fastq.${INSFX}
+    OUTPUT2=${PFX2}_sub.fastq.${INSFX}
   else
     :
   fi
 
-elif [[ $# = 1 && -f $1 ]]; then # single
-  if [[ -n $VALUE_o && -z $VALUE_O ]]; then
+elif [[ $# = 1 && -f $1 ]]; then # single-end
+  if [[ -n $VALUE_o && -z $VALUE_O && $VALUE_o ]]; then
     OUTPUT1=${VALUE_o}
 
   elif [[ -z $VALUE_o && -z $VALUE_O ]]; then
     R1=`basename $1`
     PFX1=$(echo $R1 | sed -e 's/\..*//')
-    OUTPUT1=${PFX1}_sub.fastq.${OUTSFX}
+    OUTPUT1=${PFX1}_sub.fastq.${INSFX}
   else
     :
   fi
@@ -124,19 +127,18 @@ else
 fi
 
 # Check var
-echo "Sampling number:${VALUE_n}"
-echo "Seed number: ${RAND}"
-echo "Read1: $1"
-echo "Read2: $2"
-echo "Suffix of output: ${OUTSFX}"
-echo "Read1 output: ${OUTPUT1}"
-echo "Read2 output: ${OUTPUT2}"
+echo "Sampling number:${VALUE_n}" >&2
+echo "Seed number: ${RAND}" >&2
+echo "Read1: $1" >&2
+echo "Read2: $2" >&2
+echo "Suffix of output: ${INSFX}" >&2
+echo "Read1 output: ${OUTPUT1}" >&2
+echo "Read2 output: ${OUTPUT2}" >&2
 
 ### MAIN ###
 if [[ $# = 2 ]]; then
-  case "${OUTSFX}" in
+  case "${INSFX}" in
     "bz2" )
-      echo "paired-end bz2"
       paste <(bunzip2 -c $1) <(bunzip2 -c $2) \
       | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
       | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
@@ -145,7 +147,6 @@ if [[ $# = 2 ]]; then
       ;;
 
     "gz" )
-      echo "paired-end gz"
       paste <(gunzip -c $1) <(gunzip -c $2) \
       | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
       | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
@@ -154,7 +155,6 @@ if [[ $# = 2 ]]; then
       ;;
 
     "fastq" )
-      echo "paired-end fastq"
       paste <(cat $1) <(cat $2) \
       | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
       | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
@@ -168,28 +168,51 @@ if [[ $# = 2 ]]; then
   esac
 
 elif [[ $# = 1 ]]; then
-  case "${OUTSFX}" in
-    "bz2" ) echo "singleend bz2";
+  case "${INSFX}" in
+    "bz2" )
+    if [[ "$OUTPUT1" == "-" ]]; then
+      bunzip2 -c $1 \
+      | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
+      | shuf -n $VALUE_n --random-source=<(yes ${RAND})\
+      | awk -F"\t" '{print $1"\n"$2"\n"$3"\n"$4 }'
+
+    else
       bunzip2 -c $1 \
       | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
       | shuf -n $VALUE_n --random-source=<(yes ${RAND})\
       | awk -F"\t" '{print $1"\n"$2"\n"$3"\n"$4 }' \
       | bzip2 > $OUTPUT1
+    fi
       ;;
 
-    "gz" ) echo "singleend gz";
+    "gz" )
+    if [[ "$OUTPUT1" == "-" ]]; then
+      gunzip -c $1 \
+      | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
+      | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
+      | awk -F"\t" '{print $1"\n"$2"\n"$3"\n"$4 }'
+    else
       gunzip -c $1 \
       | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
       | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
       | awk -F"\t" '{print $1"\n"$2"\n"$3"\n"$4 }' \
       | gzip > $OUTPUT1
+    fi
       ;;
 
-    "fastq" ) echo "singleend fastq";
-      cat $1 \
-      | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
-      | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
-      | awk -F"\t" '{print $1"\n"$2"\n"$3"\n"$4 }' > $OUTPUT1
+    "fastq" )
+     if [[ "$OUTPUT1" == "-" ]]; then
+       cat $1 \
+       | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
+       | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
+       | awk -F"\t" '{print $1"\n"$2"\n"$3"\n"$4 }'
+
+     else
+       cat $1 \
+       | awk '{ printf("%s",$0); n++; if(n%4==0) { printf("\n");} else { printf("\t");} }' \
+       | shuf -n $VALUE_n --random-source=<(yes ${RAND}) \
+       | awk -F"\t" '{print $1"\n"$2"\n"$3"\n"$4 }' > $OUTPUT1
+     fi
       ;;
 
     * ) echo -e "You must select bz2, gz, or uncompressed fastq."
